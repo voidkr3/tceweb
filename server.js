@@ -275,18 +275,39 @@ const allowedModelHost=h=>h==='1drv.ms'||h==='onedrive.live.com'||h==='api.onedr
 function validateModelUrl(value){try{const u=new URL(value);return u.protocol==='https:'&&allowedModelHost(u.hostname.toLowerCase());}catch{return false;}}
 async function fetchOneDriveDocx(raw){
  if(!validateModelUrl(raw))throw new Error('Use um link HTTPS compartilhado do OneDrive ou SharePoint.');
- let current=new URL(raw);if(current.hostname!=='1drv.ms'&&!current.searchParams.has('download'))current.searchParams.set('download','1');
- for(let i=0;i<6;i++){
+ // O OneDrive usa links curtos (1drv.ms) e longos. O parâmetro download=1
+ // solicita o arquivo em vez da página de visualização/edição.
+ let current=new URL(raw);
+ current.searchParams.set('download','1');
+ for(let i=0;i<10;i++){
   if(!validateModelUrl(current.toString()))throw new Error('O OneDrive redirecionou para um domínio não permitido.');
-  const response=await fetch(current,{redirect:'manual',signal:AbortSignal.timeout(20000),headers:{'User-Agent':'TCE-Document-Generator/1.0'}});
-  if([301,302,303,307,308].includes(response.status)){const loc=response.headers.get('location');if(!loc)throw new Error('Redirecionamento inválido do OneDrive.');current=new URL(loc,current);continue;}
-  if(!response.ok)throw new Error(`Não foi possível baixar o modelo do OneDrive (HTTP ${response.status}). Confira o compartilhamento.`);
-  const type=(response.headers.get('content-type')||'').toLowerCase();const len=Number(response.headers.get('content-length')||0);if(len>12*1024*1024)throw new Error('O modelo ultrapassa o limite de 12 MB.');
-  const arr=Buffer.from(await response.arrayBuffer());if(arr.length>12*1024*1024)throw new Error('O modelo ultrapassa o limite de 12 MB.');
-  if(arr.length<4||arr[0]!==0x50||arr[1]!==0x4b)throw new Error('O link não retornou um arquivo Word .docx. Use um modelo .docx, não .doc ou PDF.');
+  const response=await fetch(current,{redirect:'manual',signal:AbortSignal.timeout(25000),headers:{
+   'User-Agent':'Mozilla/5.0 (compatible; TCE-Document-Generator/1.0)',
+   'Accept':'application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream,*/*'
+  }});
+  if([301,302,303,307,308].includes(response.status)){
+   const loc=response.headers.get('location');
+   if(!loc)throw new Error('O OneDrive retornou um redirecionamento sem endereço.');
+   current=new URL(loc,current);
+   continue;
+  }
+  if(!response.ok)throw new Error(`O OneDrive não permitiu baixar o arquivo (HTTP ${response.status}). Confira se o link está compartilhado com “Qualquer pessoa com o link pode exibir”.`);
+  const len=Number(response.headers.get('content-length')||0);
+  if(len>12*1024*1024)throw new Error('O modelo ultrapassa o limite de 12 MB.');
+  const arr=Buffer.from(await response.arrayBuffer());
+  if(arr.length>12*1024*1024)throw new Error('O modelo ultrapassa o limite de 12 MB.');
+  // DOCX é um pacote ZIP. Validamos os arquivos internos para não aceitar
+  // páginas HTML de login/visualização ou outros formatos renomeados.
+  try{
+   if(arr.length<4||arr[0]!==0x50||arr[1]!==0x4b)throw new Error('not-zip');
+   const archive=new PizZip(arr);
+   if(!archive.file('[Content_Types].xml')||!archive.file('word/document.xml'))throw new Error('not-docx');
+  }catch{
+   throw new Error('O OneDrive não entregou um arquivo Word .docx válido. Confirme que o arquivo original é .docx e que o link permite exibição para qualquer pessoa com o link. Links de edição podem abrir a página do Word em vez do arquivo.');
+  }
   return arr;
  }
- throw new Error('O link do OneDrive realizou redirecionamentos demais.');
+ throw new Error('O OneDrive realizou redirecionamentos demais ao tentar baixar o modelo.');
 }
 const systemTagHelp=[
  ['data_emissao','Data de emissão'],['data_emissão','Data de emissão (com acento)'],['hora_emissao','Hora de emissão'],['nome_emissor','Nome de quem emitiu'],['email_emissor','E-mail de quem emitiu'],['nome_completo_contribuinte','Nome completo do contribuinte'],['email_contribuinte','E-mail do contribuinte'],['cpf_contribuinte','CPF do contribuinte'],['data_nascimento_contribuinte','Data de nascimento'],['endereco_contribuinte','Endereço do contribuinte'],['situacao_contribuinte','Situação do cadastro'],['nome_escola','Nome da instituição (preenchimento manual)'],['nome_atividade','Nome da atividade (preenchimento manual)'],['data_inicio','Data inicial do período'],['data_fim','Data final do período'],['total_horas','Total de horas aprovadas no período'],['quantidade_registros','Quantidade de declarações de horas aprovadas'],['lista_horas_aprovadas','Lista textual das horas aprovadas no período']
