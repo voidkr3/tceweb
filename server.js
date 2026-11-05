@@ -271,7 +271,7 @@ app.get('/api/contributor-options',auth,allow('coordenador','vice_coordenador','
 });
 // Modelos Word cadastráveis: os links precisam permitir download público pelo OneDrive/SharePoint.
 const templateRoles=['coordenador','vice_coordenador','escola'];
-const allowedModelHost=h=>h==='1drv.ms'||h==='onedrive.live.com'||h==='api.onedrive.com'||h==='1drv.com'||h.endsWith('.1drv.com')||h.endsWith('.sharepoint.com')||h==='sharepoint.com';
+const allowedModelHost=h=>h==='1drv.ms'||h==='onedrive.live.com'||h==='login.live.com'||h==='api.onedrive.com'||h==='1drv.com'||h.endsWith('.1drv.com')||h.endsWith('.sharepoint.com')||h==='sharepoint.com';
 function validateModelUrl(value){try{const u=new URL(value);return u.protocol==='https:'&&allowedModelHost(u.hostname.toLowerCase());}catch{return false;}}
 async function fetchOneDriveDocx(raw){
  if(!validateModelUrl(raw))throw new Error('Use um link HTTPS compartilhado do OneDrive ou SharePoint.');
